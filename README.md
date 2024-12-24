@@ -1,4 +1,5 @@
-Lettuce install guid on Ubuntu Focal - https://redislabs.atlassian.net/wiki/spaces/RED/pages/4846944417/Lettuce+-+Advanced+Java+Redis+client
+Lettuce install guid on Ubuntu Focal:
+https://redislabs.atlassian.net/wiki/spaces/RED/pages/4846944417/Lettuce+-+Advanced+Java+Redis+client
 
 
 # MultiSubscriber Script
@@ -18,29 +19,17 @@ The `MultiSubscriber` script is a Java application that uses Lettuce, a Redis cl
 - **Maven**: For managing dependencies and building the project.
 
 ## Setup and Installation
-1. **Clone the Repository**:
-   ```bash
-   git clone <repository-url>
-   cd <repository-folder>
-   ```
 
-2. **Install Dependencies**:
-   Ensure Maven is installed and use it to download the required libraries:
-   ```bash
-   mvn clean install
-   ```
-
-3. **Update Configuration**:
+1. **Update Configuration**:
    Modify the following constants in the script if necessary:
    - `REDIS_HOST`: Redis server hostname or IP.
    - `REDIS_PORT`: Redis server port.
    - `TOTAL_CHANNELS`: Number of channels to subscribe to.
    - `CONNECTION_COUNT`: Number of connections to use.
 
-4. **Compile and Run**:
+2. **Compile and Run**:
    ```bash
-   mvn compile
-   mvn exec:java -Dexec.mainClass="com.example.MultiSubscriber"
+   https://redislabs.atlassian.net/wiki/spaces/RED/pages/4846944417/Lettuce+-+Advanced+Java+Redis+client
    ```
 
 ## Usage
