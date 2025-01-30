@@ -27,38 +27,8 @@ The `MultiSubscriber` script is a Java application that uses Lettuce, a Redis cl
    - `TOTAL_CHANNELS`: Number of channels to subscribe to.
    - `CONNECTION_COUNT`: Number of connections to use.
 
-2. **Compile and Run**:
-   ```bash
-   https://redislabs.atlassian.net/wiki/spaces/RED/pages/4846944417/Lettuce+-+Advanced+Java+Redis+client
-   ```
 
-## Usage
-- The script subscribes to 20,000 channels and listens for messages.
-- Every second, it prints the total number of messages received in that interval.
-- It periodically unsubscribes and resubscribes to five random channels to simulate dynamic behavior.
-
-## Output
-- **Message Rate**: Printed as the number of messages received per second.
-
-## Example
-```bash
-100
-120
-115
-...
-```
-
-## Error Handling
-- Catches and logs errors during unsubscribe/resubscribe operations.
-- Ensures all resources (connections and clients) are properly closed on termination.
-
-## Notes
-- Ensure the Redis server can handle the load of 20,000 channels and dynamic subscriptions.
-- The script can be scaled by adjusting the `CONNECTION_COUNT` and `TOTAL_CHANNELS` variables.
-
-
-
-Install instructions:
+# Install instructions:
 
 # Installation Guide: MultiSubscriber for Ubuntu 20.04
 
