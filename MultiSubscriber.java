@@ -15,14 +15,21 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class MultiSubscriber {
-    private static final String REDIS_HOST = "redis-10006.alon-data2-5160.env0.qa.redislabs.com";
-    private static final int REDIS_PORT = 10007;
-    private static final int CONNECTION_COUNT = 10;
-    private static final int TOTAL_CHANNELS = 20000; // 20000 channels per connection
+    private final String redisHost;
+    private final int redisPort;
+    private final int connectionCount;
+    private final int totalChannels;
     private static final String CHANNEL_PREFIX = "channel-";
     private static final AtomicLong messageCounter = new AtomicLong(0);
 
-    public static void main(String[] args) {
+    public MultiSubscriber(String redisHost, int redisPort, int connectionCount, int totalChannels) {
+        this.redisHost = redisHost;
+        this.redisPort = redisPort;
+        this.connectionCount = connectionCount;
+        this.totalChannels = totalChannels;
+    }
+
+    public void start() {
         List<RedisClient> clients = new ArrayList<>();
         List<StatefulRedisPubSubConnection<String, String>> connections = new ArrayList<>();
         CountDownLatch latch = new CountDownLatch(1);
@@ -31,15 +38,15 @@ public class MultiSubscriber {
 
         try {
             // Create array of all channel names
-            String[] allChannels = new String[TOTAL_CHANNELS];
-            for (int i = 0; i < TOTAL_CHANNELS; i++) {
+            String[] allChannels = new String[totalChannels];
+            for (int i = 0; i < totalChannels; i++) {
                 allChannels[i] = CHANNEL_PREFIX + i;
             }
 
             // Create connections and subscribe to all channels
-            for (int i = 0; i < CONNECTION_COUNT; i++) {
+            for (int i = 0; i < connectionCount; i++) {
                 RedisClient client = RedisClient.create(
-                    String.format("redis://%s:%d", REDIS_HOST, REDIS_PORT)
+                    String.format("redis://%s:%d", redisHost, redisPort)
                 );
                 clients.add(client);
 
@@ -60,7 +67,7 @@ public class MultiSubscriber {
             // Schedule message rate printing
             scheduler.scheduleAtFixedRate(() -> {
                 long count = messageCounter.getAndSet(0);
-                System.out.println(count);
+                System.out.println("Messages received in last second: " + count);
             }, 1, 1, TimeUnit.SECONDS);
 
             // Schedule UNSUBSCRIBE from five random channels and then RESUBSCRIBE
@@ -72,7 +79,7 @@ public class MultiSubscriber {
                         // Pick 5 random channels to unsubscribe and resubscribe
                         List<String> randomChannels = new ArrayList<>();
                         for (int i = 0; i < 5; i++) {
-                            randomChannels.add(allChannels[random.nextInt(TOTAL_CHANNELS)]);
+                            randomChannels.add(allChannels[random.nextInt(totalChannels)]);
                         }
 
                         sync.unsubscribe(randomChannels.toArray(new String[0]));
@@ -92,6 +99,42 @@ public class MultiSubscriber {
             scheduler.shutdown();
             connections.forEach(StatefulRedisPubSubConnection::close);
             clients.forEach(RedisClient::shutdown);
+        }
+    }
+
+    public static void main(String[] args) {
+        if (args.length != 4) {
+            System.out.println("Usage: java MultiSubscriber <redisHost> <redisPort> <connectionCount> <totalChannels>");
+            System.out.println("Example: java MultiSubscriber localhost 6379 10 30000");
+            System.exit(1);
+        }
+
+        try {
+            String host = args[0];
+            int port = Integer.parseInt(args[1]);
+            int connections = Integer.parseInt(args[2]);
+            int channels = Integer.parseInt(args[3]);
+
+            // Input validation
+            if (port <= 0 || port > 65535) {
+                throw new IllegalArgumentException("Port must be between 1 and 65535");
+            }
+            if (connections <= 0) {
+                throw new IllegalArgumentException("Connection count must be positive");
+            }
+            if (channels <= 0) {
+                throw new IllegalArgumentException("Total channels must be positive");
+            }
+
+            MultiSubscriber subscriber = new MultiSubscriber(host, port, connections, channels);
+            subscriber.start();
+
+        } catch (NumberFormatException e) {
+            System.err.println("Error: Invalid number format in arguments");
+            System.exit(1);
+        } catch (IllegalArgumentException e) {
+            System.err.println("Error: " + e.getMessage());
+            System.exit(1);
         }
     }
 }
