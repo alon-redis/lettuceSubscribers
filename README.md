@@ -71,7 +71,7 @@ mkdir -p src/main/java/com/example
 
 3. Create a new `pom.xml` file in the root directory:
 ```bash
-touch pom.xml
+pico pom.xml
 ```
 
 4. Add the following content to `pom.xml`:
@@ -129,7 +129,7 @@ touch pom.xml
 
 5. Create the MultiSubscriber.java file:
 ```bash
-touch src/main/java/com/example/MultiSubscriber.java
+pico src/main/java/com/example/MultiSubscriber.java
 ```
 
 6. Copy the MultiSubscriber code provided earlier into this file.
