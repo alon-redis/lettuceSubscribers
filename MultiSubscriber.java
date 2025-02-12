@@ -5,14 +5,10 @@ import io.lettuce.core.pubsub.RedisPubSubAdapter;
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
 import io.lettuce.core.pubsub.api.sync.RedisPubSubCommands;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 public class MultiSubscriber {
     private final String redisHost;
@@ -21,12 +17,16 @@ public class MultiSubscriber {
     private final int totalChannels;
     private static final String CHANNEL_PREFIX = "channel-";
     private static final AtomicLong messageCounter = new AtomicLong(0);
-
+    
+    // Thread-safe collection to maintain connection-specific channel subscriptions
+    private final ConcurrentMap<StatefulRedisPubSubConnection<String, String>, Set<String>> connectionSubscriptions;
+    
     public MultiSubscriber(String redisHost, int redisPort, int connectionCount, int totalChannels) {
         this.redisHost = redisHost;
         this.redisPort = redisPort;
         this.connectionCount = connectionCount;
         this.totalChannels = totalChannels;
+        this.connectionSubscriptions = new ConcurrentHashMap<>();
     }
 
     public void start() {
@@ -37,22 +37,25 @@ public class MultiSubscriber {
         Random random = new Random();
 
         try {
-            // Create array of all channel names
+            // Initialize channel array
             String[] allChannels = new String[totalChannels];
             for (int i = 0; i < totalChannels; i++) {
                 allChannels[i] = CHANNEL_PREFIX + i;
             }
 
-            // Create connections and subscribe to all channels
+            // Initialize connections with thread-safe subscription tracking
             for (int i = 0; i < connectionCount; i++) {
                 RedisClient client = RedisClient.create(
                     String.format("redis://%s:%d", redisHost, redisPort)
                 );
                 clients.add(client);
-
+                
                 StatefulRedisPubSubConnection<String, String> connection = client.connectPubSub();
                 connections.add(connection);
-
+                
+                // Initialize thread-safe set for this connection's subscriptions
+                connectionSubscriptions.put(connection, ConcurrentHashMap.newKeySet());
+                
                 connection.addListener(new RedisPubSubAdapter<String, String>() {
                     @Override
                     public void message(String channel, String message) {
@@ -60,39 +63,62 @@ public class MultiSubscriber {
                     }
                 });
 
+                // Initial subscription
                 RedisPubSubCommands<String, String> sync = connection.sync();
                 sync.subscribe(allChannels);
+                
+                // Record initial subscriptions
+                connectionSubscriptions.get(connection).addAll(Arrays.asList(allChannels));
             }
 
-            // Schedule message rate printing
+            // Message rate monitoring
             scheduler.scheduleAtFixedRate(() -> {
                 long count = messageCounter.getAndSet(0);
                 System.out.println("Messages received in last second: " + count);
             }, 1, 1, TimeUnit.SECONDS);
 
-            // Schedule UNSUBSCRIBE from five random channels and then RESUBSCRIBE
+            // Enhanced unsubscribe/resubscribe scheduler with connection affinity
             scheduler.scheduleAtFixedRate(() -> {
                 try {
                     for (StatefulRedisPubSubConnection<String, String> connection : connections) {
-                        RedisPubSubCommands<String, String> sync = connection.sync();
-
-                        // Pick 5 random channels to unsubscribe and resubscribe
-                        List<String> randomChannels = new ArrayList<>();
-                        for (int i = 0; i < 5; i++) {
-                            randomChannels.add(allChannels[random.nextInt(totalChannels)]);
+                        // Get current subscriptions for this connection
+                        Set<String> currentSubscriptions = connectionSubscriptions.get(connection);
+                        
+                        // Select random channels from current subscriptions
+                        List<String> subscribedChannels = new ArrayList<>(currentSubscriptions);
+                        List<String> channelsToModify = new ArrayList<>();
+                        
+                        // Ensure we don't try to modify more channels than available
+                        int numChannelsToModify = Math.min(5, subscribedChannels.size());
+                        for (int i = 0; i < numChannelsToModify; i++) {
+                            int randomIndex = random.nextInt(subscribedChannels.size());
+                            channelsToModify.add(subscribedChannels.remove(randomIndex));
                         }
 
-                        sync.unsubscribe(randomChannels.toArray(new String[0]));
-                        TimeUnit.MILLISECONDS.sleep(200); // Delay between unsubscribe and resubscribe
-                        sync.subscribe(randomChannels.toArray(new String[0]));
+                        if (!channelsToModify.isEmpty()) {
+                            RedisPubSubCommands<String, String> sync = connection.sync();
+                            
+                            // Atomic unsubscribe operation
+                            sync.unsubscribe(channelsToModify.toArray(new String[0]));
+                            // Update subscription tracking
+                            currentSubscriptions.removeAll(channelsToModify);
+                            
+                            // Controlled delay to prevent potential race conditions
+                            TimeUnit.MILLISECONDS.sleep(200);
+                            
+                            // Atomic resubscribe operation on same connection
+                            sync.subscribe(channelsToModify.toArray(new String[0]));
+                            // Update subscription tracking
+                            currentSubscriptions.addAll(channelsToModify);
+                        }
                     }
                 } catch (Exception e) {
-                    System.err.println("Error during unsubscribe/resubscribe: " + e.getMessage());
+                    System.err.println("Error during subscription state change: " + e.getMessage());
+                    e.printStackTrace();
                 }
             }, 1, 1, TimeUnit.SECONDS);
 
             latch.await();
-
         } catch (Exception e) {
             e.printStackTrace();
         } finally {
@@ -102,6 +128,7 @@ public class MultiSubscriber {
         }
     }
 
+    // Main method remains unchanged
     public static void main(String[] args) {
         if (args.length != 4) {
             System.out.println("Usage: java MultiSubscriber <redisHost> <redisPort> <connectionCount> <totalChannels>");
@@ -115,7 +142,6 @@ public class MultiSubscriber {
             int connections = Integer.parseInt(args[2]);
             int channels = Integer.parseInt(args[3]);
 
-            // Input validation
             if (port <= 0 || port > 65535) {
                 throw new IllegalArgumentException("Port must be between 1 and 65535");
             }
@@ -128,7 +154,6 @@ public class MultiSubscriber {
 
             MultiSubscriber subscriber = new MultiSubscriber(host, port, connections, channels);
             subscriber.start();
-
         } catch (NumberFormatException e) {
             System.err.println("Error: Invalid number format in arguments");
             System.exit(1);
